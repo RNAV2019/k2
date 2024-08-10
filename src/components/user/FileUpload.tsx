@@ -228,10 +228,10 @@ export default function FileUpload() {
                       </p>
                       <button
                         type="button"
-                        className="scale-100 text-black transition-transform hover:scale-110"
+                        className="scale-100 transition-transform hover:scale-110"
                         onClick={() => removeFile(file)}
                       >
-                        <Trash className="h-4 w-4" />
+                        <Trash className="h-4 w-4 text-current" />
                       </button>
                     </div>
                   </div>
@@ -279,7 +279,7 @@ export default function FileUpload() {
           </div>
         </div>
         <Button className="order-3" onClick={() => handleUpload()}>
-          Submit
+          Optimize
         </Button>
       </div>
     </>
