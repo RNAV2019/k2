@@ -32,6 +32,10 @@ type FileWithPreview = File & {
   height: number;
 };
 
+interface OptimizeImagesResponse {
+  optimizedFiles: string[];
+}
+
 export default function FileUpload() {
   const [files, setFiles] = useState<FileWithPreview[]>([]);
   const [filetype, setFiletype] = useState<string>("webp");
@@ -71,29 +75,64 @@ export default function FileUpload() {
     }
     setLoading(true);
     // const file of listOfFiles
+    // for (let i = 0; i < listOfFiles.length; i++) {
+    //   const formData = new FormData();
+    //   formData.append("file", listOfFiles[i]!);
+    //   formData.append("filetype", filetype);
+    //   formData.append("quality", quality.toString());
+    //   formData.append("scale", scale.toString());
+    //   formData.append("width", dimensions[i]!.width.toString());
+    //   formData.append("height", dimensions[i]!.height.toString());
+
+    //   const response = await fetch("/api/compress", {
+    //     method: "POST",
+    //     body: formData,
+    //   });
+
+    //   if (response.ok) {
+    //     const blob = await response.blob();
+    //     const optimizedImageUrl = URL.createObjectURL(blob);
+    //     setOptimizedFiles((prev) => {
+    //       return [...prev, optimizedImageUrl];
+    //     });
+    //   } else {
+    //     console.error("Image optimization failed for file:", listOfFiles[i]!);
+    //   }
+    // }
+    const formData = new FormData();
+
     for (let i = 0; i < listOfFiles.length; i++) {
-      const formData = new FormData();
-      formData.append("file", listOfFiles[i]!);
-      formData.append("filetype", filetype);
-      formData.append("quality", quality.toString());
-      formData.append("scale", scale.toString());
-      formData.append("width", dimensions[i]!.width.toString());
-      formData.append("height", dimensions[i]!.height.toString());
+      formData.append(`file-${i}`, listOfFiles[i]!);
+      formData.append(`filetype-${i}`, filetype);
+      formData.append(`quality-${i}`, quality.toString());
+      formData.append(`scale-${i}`, scale.toString());
+      formData.append(`width-${i}`, dimensions[i]!.width.toString());
+      formData.append(`height-${i}`, dimensions[i]!.height.toString());
+    }
 
-      const response = await fetch("/api/compress", {
-        method: "POST",
-        body: formData,
+    const response = await fetch("/api/compress", {
+      method: "POST",
+      body: formData,
+    });
+
+    if (response.ok) {
+      const jsonResponse = (await response.json()) as OptimizeImagesResponse;
+      const optimizedUrls = jsonResponse.optimizedFiles.map((b64str) => {
+        // Convert base64 string to Blob
+        const binaryString = atob(b64str);
+        const len = binaryString.length;
+        const bytes = new Uint8Array(len);
+        for (let i = 0; i < len; i++) {
+          bytes[i] = binaryString.charCodeAt(i);
+        }
+        const blob = new Blob([bytes], { type: `image/${filetype}` });
+
+        // Create a URL for the Blob
+        return URL.createObjectURL(blob);
       });
-
-      if (response.ok) {
-        const blob = await response.blob();
-        const optimizedImageUrl = URL.createObjectURL(blob);
-        setOptimizedFiles((prev) => {
-          return [...prev, optimizedImageUrl];
-        });
-      } else {
-        console.error("Image optimization failed for file:", listOfFiles[i]!);
-      }
+      setOptimizedFiles(optimizedUrls);
+    } else {
+      console.error("Image optimization failed.");
     }
     setLoading(false);
   };
