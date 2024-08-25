@@ -12,8 +12,6 @@ import {
   blobUrlToBlob,
   downloadBlobAsImage,
   downloadBlobsAsZip,
-  fileToBlob,
-  getImageDimensions,
 } from "~/lib/helper";
 import { Button } from "../ui/button";
 import {
@@ -25,134 +23,83 @@ import {
 } from "../ui/select";
 import { Slider } from "../ui/slider";
 import { Label } from "../ui/label";
+import { Spinner } from "../ui/spinner";
 
-type FileWithPreview = File & {
-  preview: string;
-  width: number;
-  height: number;
-};
-
-interface OptimizeImagesResponse {
-  optimizedFiles: string[];
+interface ImageResponse {
+  message: string;
+  processed_images: string[];
 }
 
 export default function FileUpload() {
-  const [files, setFiles] = useState<FileWithPreview[]>([]);
-  const [filetype, setFiletype] = useState<string>("webp");
+  const [files, setFiles] = useState<File[]>([]);
+  const [format, setFormat] = useState<string>("webp");
   const [quality, setQuality] = useState<number>(80);
   const [scale, setScale] = useState<number>(100);
-  const [optimizedFiles, setOptimizedFiles] = useState<string[]>([]);
+  const [optimizedImages, setOptimizedImages] = useState<string[]>([]);
   const [loading, setLoading] = useState<boolean>(false);
 
-  const onDrop = useCallback(async (acceptedFiles: File[]) => {
-    const newFiles: FileWithPreview[] = [];
-    for (const acceptedFile of acceptedFiles) {
-      const value = await getImageDimensions(acceptedFile);
-      const newFile = Object.assign(acceptedFile, {
-        preview: URL.createObjectURL(acceptedFile),
-        width: value.width,
-        height: value.height,
-      });
-      console.log(newFile);
-      newFiles.push(newFile);
-    }
-    setFiles((prevFiles) => [...prevFiles, ...newFiles]);
+  const onDrop = useCallback((acceptedFiles: File[]) => {
+    setFiles((prevFiles) => [...prevFiles, ...acceptedFiles]);
   }, []);
 
-  const removeFile = (file: FileWithPreview) => {
+  const removeFile = (file: File) => {
     setFiles((currentFiles) => currentFiles.filter((f) => f !== file));
-    URL.revokeObjectURL(file.preview);
   };
 
   const handleUpload = async () => {
-    const listOfFiles: Blob[] = [];
-    const dimensions: { width: number; height: number }[] = [];
-    for (const file of files) {
-      dimensions.push({ width: file.width, height: file.height });
-      const newFile = file as File;
-      const newBlob = await fileToBlob(newFile);
-      listOfFiles.push(newBlob);
-    }
     setLoading(true);
-    // const file of listOfFiles
-    // for (let i = 0; i < listOfFiles.length; i++) {
-    //   const formData = new FormData();
-    //   formData.append("file", listOfFiles[i]!);
-    //   formData.append("filetype", filetype);
-    //   formData.append("quality", quality.toString());
-    //   formData.append("scale", scale.toString());
-    //   formData.append("width", dimensions[i]!.width.toString());
-    //   formData.append("height", dimensions[i]!.height.toString());
-
-    //   const response = await fetch("/api/compress", {
-    //     method: "POST",
-    //     body: formData,
-    //   });
-
-    //   if (response.ok) {
-    //     const blob = await response.blob();
-    //     const optimizedImageUrl = URL.createObjectURL(blob);
-    //     setOptimizedFiles((prev) => {
-    //       return [...prev, optimizedImageUrl];
-    //     });
-    //   } else {
-    //     console.error("Image optimization failed for file:", listOfFiles[i]!);
-    //   }
-    // }
     const formData = new FormData();
 
-    for (let i = 0; i < listOfFiles.length; i++) {
-      formData.append(`file-${i}`, listOfFiles[i]!);
-      formData.append(`filetype-${i}`, filetype);
-      formData.append(`quality-${i}`, quality.toString());
-      formData.append(`scale-${i}`, scale.toString());
-      formData.append(`width-${i}`, dimensions[i]!.width.toString());
-      formData.append(`height-${i}`, dimensions[i]!.height.toString());
-    }
-
-    const response = await fetch("/api/compress", {
-      method: "POST",
-      body: formData,
+    files.forEach((file) => {
+      formData.append("image", file);
     });
 
-    if (response.ok) {
-      const jsonResponse = (await response.json()) as OptimizeImagesResponse;
-      const optimizedUrls = jsonResponse.optimizedFiles.map((b64str) => {
-        // Convert base64 string to Blob
-        const binaryString = atob(b64str);
-        const len = binaryString.length;
-        const bytes = new Uint8Array(len);
-        for (let i = 0; i < len; i++) {
-          bytes[i] = binaryString.charCodeAt(i);
-        }
-        const blob = new Blob([bytes], { type: `image/${filetype}` });
+    formData.append("quality", quality.toString());
+    formData.append("scale", scale.toString());
+    formData.append("format", format);
+    try {
+      const response = await fetch(
+        "https://k2-backend.shuttleapp.rs/optimize",
+        {
+          method: "POST",
+          body: formData,
+          mode: "cors",
+        },
+      );
+      // const response = await fetch("http://localhost:8000/optimize", {
+      //   method: "POST",
+      //   body: formData,
+      //   mode: "cors",
+      // });
 
-        // Create a URL for the Blob
-        return URL.createObjectURL(blob);
-      });
-      setOptimizedFiles(optimizedUrls);
-    } else {
-      console.error("Image optimization failed.");
+      if (response.ok) {
+        const data = (await response.json()) as ImageResponse;
+        setOptimizedImages(data.processed_images);
+      } else {
+        console.error("Image optimization failed.");
+      }
+    } catch (error) {
+      console.error("Error during optimization:", error);
+    } finally {
+      setLoading(false);
     }
-    setLoading(false);
   };
 
   // Handle individual file download
   const handleDownload = (imageSrc: string) => {
-    if (optimizedFiles) {
-      downloadBlobAsImage(imageSrc, `optimized-image.${filetype}`);
+    if (optimizedImages) {
+      downloadBlobAsImage(imageSrc, `optimized-image.${format}`);
     }
   };
 
   // Download all processed images as a ZIP file
   const handleDownloadZip = async () => {
-    if (optimizedFiles.length === 0) return;
+    if (optimizedImages.length === 0) return;
     const optimizedBlobs: Blob[] = [];
-    for (const optimizedFile of optimizedFiles) {
+    for (const optimizedFile of optimizedImages) {
       optimizedBlobs.push(await blobUrlToBlob(optimizedFile));
     }
-
-    await downloadBlobsAsZip(optimizedBlobs, filetype);
+    await downloadBlobsAsZip(optimizedBlobs, format);
   };
 
   const { getRootProps, getInputProps, open } = useDropzone({
@@ -166,7 +113,7 @@ export default function FileUpload() {
 
   useEffect(() => {
     setFiles([]);
-  }, [optimizedFiles]);
+  }, [optimizedImages]);
 
   const rootProps: DropzoneRootProps = getRootProps();
   const inputProps: DropzoneInputProps = getInputProps();
@@ -178,7 +125,7 @@ export default function FileUpload() {
           <div className="flex flex-col items-center gap-4 md:flex-row">
             <Select
               onValueChange={(value) => {
-                setFiletype(value);
+                setFormat(value);
               }}
             >
               <SelectTrigger className="w-48">
@@ -220,14 +167,14 @@ export default function FileUpload() {
           <div className="flex flex-row items-center gap-4">
             <Button
               onClick={() => handleDownloadZip()}
-              disabled={loading || optimizedFiles.length == 0}
+              disabled={loading || optimizedImages.length == 0}
             >
               Download All
             </Button>
             <Button
               onClick={() => {
                 setFiles([]);
-                setOptimizedFiles([]);
+                setOptimizedImages([]);
               }}
             >
               Clear Queue
@@ -255,7 +202,7 @@ export default function FileUpload() {
                     className="relative flex h-auto w-48 flex-col items-center rounded-md border border-dashed border-muted-foreground p-3"
                   >
                     <Image
-                      src={file.preview}
+                      src={URL.createObjectURL(file)}
                       alt={file.name}
                       className="h-20 w-auto rounded-md"
                       width={200}
@@ -282,14 +229,14 @@ export default function FileUpload() {
             className={`flex min-h-full w-full flex-col items-center justify-start rounded-lg border border-dashed border-muted-foreground p-4 focus:outline-none focus:ring-2 focus:ring-muted-foreground focus:ring-offset-2`}
           >
             {loading && (
-              <h1 className="flex h-full grow flex-col justify-center">
-                Loading...
-              </h1>
+              <div className="flex h-full grow flex-col justify-center">
+                <Spinner show={loading} />
+              </div>
             )}
             <div className="grid max-h-full grid-cols-2 gap-4 overflow-y-scroll">
               {!loading &&
-                optimizedFiles.length > 0 &&
-                optimizedFiles.map((image, index) => {
+                optimizedImages.length > 0 &&
+                optimizedImages.map((image, index) => {
                   return (
                     <div
                       key={index}
